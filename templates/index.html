@@ -1,0 +1,226 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digit Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        #canvas-container {
+            display: inline-block;
+            border: 2px solid #333;
+            margin-bottom: 20px;
+            background-color: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        canvas {
+            display: block;
+            background-color: white;
+        }
+        .buttons {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 30px;
+            margin: 0 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        #result {
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 20px;
+            color: #333;
+        }
+        .loading {
+            display: none;
+            margin: 10px auto;
+        }
+        .tips {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 10px;
+            background-color: #f0f8ff;
+            border: 1px solid #add8e6;
+            border-radius: 5px;
+            text-align: left;
+        }
+        #debug-info {
+            display: none;
+            font-family: monospace;
+            font-size: 10px;
+            margin-top: 20px;
+            text-align: left;
+            max-width: 600px;
+            margin: 0 auto;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Draw a Digit (0-9)</h1>
+    <div class="tips">
+        <strong>Tips for better recognition:</strong>
+        <ul>
+            <li>Draw the digit centered in the box</li>
+            <li>Make lines clear and connected</li>
+            <li>Draw with a good size - not too small or too large</li>
+            <li>If prediction is wrong, try clearing and redrawing</li>
+        </ul>
+    </div>
+    <div id="canvas-container">
+        <canvas id="drawing-canvas" width="280" height="280"></canvas>
+    </div>
+    <div class="buttons">
+        <button id="clear-button">Clear</button>
+        <button id="predict-button">Predict</button>
+    </div>
+    <div id="result">Prediction: </div>
+    <div class="loading" id="loading-indicator">Processing...</div>
+    <div id="debug-info"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('drawing-canvas');
+            const ctx = canvas.getContext('2d');
+            const clearButton = document.getElementById('clear-button');
+            const predictButton = document.getElementById('predict-button');
+            const resultDiv = document.getElementById('result');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const debugInfo = document.getElementById('debug-info');
+            
+            let isDrawing = false;
+            
+            // Set canvas properties
+            ctx.lineWidth = 24;  // Make lines thicker
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'black';
+            
+            // Clear the canvas and reset the UI
+            function clearCanvas() {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                resultDiv.textContent = 'Prediction: ';
+                debugInfo.style.display = 'none';
+            }
+            
+            // Initialize with white background
+            clearCanvas();
+            
+            // Start drawing
+            canvas.addEventListener('mousedown', function(e) {
+                isDrawing = true;
+                ctx.beginPath();
+                const rect = canvas.getBoundingClientRect();
+                ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+            });
+            
+            // Continue drawing
+            canvas.addEventListener('mousemove', function(e) {
+                if (!isDrawing) return;
+                const rect = canvas.getBoundingClientRect();
+                ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+                ctx.stroke();
+            });
+            
+            // Stop drawing
+            canvas.addEventListener('mouseup', function() {
+                isDrawing = false;
+            });
+            
+            canvas.addEventListener('mouseout', function() {
+                isDrawing = false;
+            });
+            
+            // Touch support for mobile
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                isDrawing = true;
+                ctx.beginPath();
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+            });
+            
+            canvas.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                if (!isDrawing) return;
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+                ctx.stroke();
+            });
+            
+            canvas.addEventListener('touchend', function() {
+                isDrawing = false;
+            });
+            
+            // Clear button functionality
+            clearButton.addEventListener('click', clearCanvas);
+            
+            // Predict button functionality
+            predictButton.addEventListener('click', async function() {
+                // Show loading indicator
+                loadingIndicator.style.display = 'block';
+                resultDiv.textContent = 'Processing...';
+                
+                // Get the image data
+                const imageData = canvas.toDataURL('image/png');
+                
+                // Send to server for prediction
+                try {
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ image_data: imageData }),
+                    });
+                    
+                    const data = await response.json();
+                    loadingIndicator.style.display = 'none';
+                    
+                    if (data.success) {
+                        resultDiv.textContent = 'Prediction: ' + data.prediction;
+                        
+                        // If there's debug info, show it
+                        if (data.debug_info) {
+                            debugInfo.textContent = data.debug_info;
+                            // Uncomment the next line to show debug info
+                            // debugInfo.style.display = 'block';
+                        }
+                        
+                        if (data.warning) {
+                            console.log(data.warning);
+                        }
+                    } else {
+                        resultDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    loadingIndicator.style.display = 'none';
+                    resultDiv.textContent = 'Error making prediction';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
